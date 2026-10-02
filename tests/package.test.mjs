@@ -7,7 +7,7 @@ const read=p=>readFile(new URL(`../${p}`,import.meta.url),'utf8')
 test('package is an installable DSH bundle with native client dependencies', async () => {
   const pkg=JSON.parse(await read('package.json'))
   assert.equal(pkg.name,'dsh-ai-council')
-  assert.equal(pkg.version,'0.3.0')
+  assert.equal(pkg.version,'0.3.1')
   assert.equal(pkg.author,'AGSQ11')
   assert.ok(pkg.keywords.includes('dsh-plugin'))
   assert.equal(pkg.dsh.bundle.patch,'./cordis.patch.yml')

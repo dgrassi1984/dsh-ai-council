@@ -64,7 +64,9 @@ test('registers a public service, native tool, commands, prompt and web routes',
     const service=new AiCouncilService(ctx,store); service.start()
     assert.ok(registrations.services.has('aiCouncil'))
     assert.ok(registrations.tools.some(t=>t.name==='ai_council'))
-    assert.deepEqual(registrations.commands.map(c=>c.name), ['council','council-result','council-history'])
+    assert.deepEqual(registrations.commands.map(c=>c.name), ['council','council-stop','council-result','council-history'])
+    assert.equal(registrations.commands.find(c=>c.name==='council').recordInput,false)
+    assert.equal(registrations.commands.find(c=>c.name==='council-stop').recordInput,false)
     assert.ok(registrations.prompts.some(p=>p.name==='plugin:ai-council'))
     assert.ok(registrations.routes.length >= 8)
     service.dispose()
@@ -170,6 +172,23 @@ test('live host route resolves the exact tool-linked council without exposing hi
     assert.equal(body.entry.proposal,'Visible proposal')
     assert.equal(body.entry.liveRound.number,1)
     assert.equal('context' in body.entry,false)
+    service.dispose()
+  } finally { cleanup() }
+})
+
+test('cancel aborts an active run and reports not-running afterwards', () => {
+  const {ctx}=fakeCtx(); const {store,cleanup}=tempStore()
+  try {
+    const service=new AiCouncilService(ctx,store)
+    const controller=new AbortController()
+    service.activeRuns.set('council-cancel-1',{controller,promise:Promise.resolve({})})
+    const first=service.cancel('council-cancel-1')
+    assert.equal(first.ok,true)
+    assert.ok(controller.signal.aborted)
+    assert.equal(controller.signal.reason.message,'Stopped by operator')
+    const second=service.cancel('council-cancel-1')
+    assert.deepEqual(second,{ok:false,error:'not-running'})
+    assert.deepEqual(service.cancel('council-missing'),{ok:false,error:'not-running'})
     service.dispose()
   } finally { cleanup() }
 })

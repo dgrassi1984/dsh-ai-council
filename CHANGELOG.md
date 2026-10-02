@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Inline proposals no longer hide the chat card; `/council-stop` and a Stop button abort a run; failover is capped at 3 routes.
+
 ## 0.3.0
 
 - Added a live animated Council card directly in the conversation for both native `ai_council` tool calls and background `/council` commands.
