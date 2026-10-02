@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   defaultRoles, defaultTemplates, sanitizeRole, sanitizeConfig, extractJsonObject,
-  deterministicTemplate, chooseMembers, chooseChair, evaluateConsensus, formatCouncilMarkdown,
+  deterministicTemplate, chooseMembers, chooseChair, evaluateConsensus, formatCouncilMarkdown, synthesizeChairFallback,
 } from '../src/core.js'
 
 test('ships a broad editable corporate role registry with one chair', () => {
@@ -99,4 +99,25 @@ test('council output is normal Markdown prose with members and dissent', () => {
   assert.match(text, /Use PostgreSQL/)
   assert.match(text, /\| Role \| Position \| Model \| Confidence \|/)
   assert.doesNotMatch(text, /```/)
+})
+
+test('synthesizeChairFallback defers without fabricating a chair judgment', () => {
+  const memberResponses = [
+    { roleName:'Security Architect', degraded:true, blocking_objections:['Auth edge case'] },
+    { roleName:'Principal Architect', degraded:false, blocking_objections:[] },
+    { roleName:'Staff Engineer', degraded:true, blocking_objections:[] },
+  ]
+  const notFinal = synthesizeChairFallback({ memberResponses, error:'Connection error.', finalRound:false })
+  assert.equal(notFinal.status, 'continue')
+  assert.equal(notFinal.consensus_reached, false)
+  assert.equal(notFinal.consensus_score, 0)
+  assert.equal(notFinal.decision, '')
+  assert.equal(notFinal.rationale, 'Chair route failed (Connection error.). No chair synthesis was produced.')
+  assert.deepEqual(notFinal.unresolved_blocking_issues, ['Security Architect: Auth edge case'])
+  assert.deepEqual(notFinal.dissent, ['Unavailable seats: Security Architect, Staff Engineer'])
+  assert.deepEqual(notFinal.next_round_focus, ['Retry chair synthesis; unresolved member objections remain'])
+  const final = synthesizeChairFallback({ memberResponses, error:new Error('Connection error.'), finalRound:true })
+  assert.equal(final.status, 'defer')
+  assert.deepEqual(final.next_round_focus, [])
+  assert.equal(synthesizeChairFallback({ memberResponses:[{roleName:'A',blocking_objections:[]}], error:'x', finalRound:false }).dissent.length, 0)
 })

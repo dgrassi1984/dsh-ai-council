@@ -12,7 +12,7 @@ function chunks(text) {
   })()
 }
 
-function fakeCtx({ failFirst = false } = {}) {
+function fakeCtx({ failFirst = false, failChairRounds = [] } = {}) {
   const registrations = { tools:[], commands:[], prompts:[], routes:[], services:new Map(), systems:[], calls:[] }
   let firstFailed = false
   const models = [
@@ -30,6 +30,8 @@ function fakeCtx({ failFirst = false } = {}) {
       stream(options){
         registrations.calls.push({ provider:options.provider, model:options.model, purpose:options.purpose, system:options.system, prompt:options.messages?.[0]?.content?.[0]?.text || '' })
         if (failFirst && !firstFailed && String(options.purpose).includes('member:')) { firstFailed = true; throw new Error('simulated route failure') }
+        const chairRound = /chair:round-(\d+)/.exec(String(options.purpose || ''))
+        if (chairRound && failChairRounds.includes(Number(chairRound[1]))) throw new Error('Connection error.')
         const purpose = String(options.purpose || '')
         const prompt = options.messages?.[0]?.content?.[0]?.text || ''
         if (purpose.includes('planner')) return chunks(JSON.stringify({ template_id:'software-architecture', add_role_ids:[], remove_role_ids:[], reason:'architecture task' }))
@@ -109,6 +111,36 @@ test('a failed member route is replaced and the corporate role survives', async 
     assert.equal(result.status,'ok')
     assert.ok(registrations.calls.filter(c=>c.purpose.includes('member:')).length > 6)
     assert.deepEqual(new Set(result.members.map(m=>m.roleId)),new Set(['principal-architect','staff-implementation','security-architect']))
+  } finally { cleanup() }
+})
+
+
+test('a chair connection error does not abort a council whose members already answered', async () => {
+  const {ctx,registrations}=fakeCtx({failChairRounds:[1]}); const {store,cleanup}=tempStore()
+  try {
+    store.setConfig({ minMembers:3, maxMembers:3, maxRounds:1, parallelism:3, avoidMainModel:false, uniqueModelsPerCouncil:true, consensusThreshold:.66 })
+    const service=new AiCouncilService(ctx,store)
+    const result=await service.runCouncil({ proposal:'Review a service architecture.', template:'software-architecture', roleIds:['principal-architect','staff-implementation','security-architect'] })
+    assert.equal(result.status,'ok')
+    assert.equal(result.finalStatus,'defer')
+    assert.doesNotMatch(result.markdown,/AI Council failed/)
+    assert.equal(result.members.length,3)
+    const entry=store.history(result.councilId)
+    assert.equal(entry.phase,'completed')
+    assert.ok(entry.events.some(e=>e.type==='chair.unavailable'))
+    assert.ok(registrations.calls.filter(c=>String(c.purpose).includes('chair:round-1')).length > 1)
+  } finally { cleanup() }
+})
+
+test('a transient chair failure in round 1 recovers when a later round chair succeeds', async () => {
+  const {ctx,registrations}=fakeCtx({failChairRounds:[1]}); const {store,cleanup}=tempStore()
+  try {
+    const service=new AiCouncilService(ctx,store)
+    const result=await service.runCouncil({ proposal:'Review a service architecture.', template:'software-architecture', roleIds:['principal-architect','staff-implementation','security-architect'] })
+    assert.equal(result.status,'ok')
+    assert.equal(result.finalStatus,'consensus')
+    assert.ok(registrations.calls.filter(c=>String(c.purpose).includes('chair:round-1')).length >= 2)
+    assert.ok(store.history(result.councilId).events.some(e=>e.type==='chair.unavailable'))
   } finally { cleanup() }
 })
 

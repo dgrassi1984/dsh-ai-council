@@ -228,6 +228,22 @@ export function evaluateConsensus({ chair, memberResponses, roles, threshold = 0
   return { reached, approvalRatio: ratio, blockers: allBlockers }
 }
 
+export function synthesizeChairFallback({ memberResponses = [], error = '', finalRound = false } = {}) {
+  const responses = Array.isArray(memberResponses) ? memberResponses : []
+  const message = error instanceof Error ? error.message : String(error || 'chair unavailable')
+  const unavailableSeats = responses.filter(m => m?.degraded).map(m => m.roleName)
+  return {
+    status: finalRound ? 'defer' : 'continue',
+    consensus_reached: false,
+    consensus_score: 0,
+    decision: '',
+    rationale: `Chair route failed (${message}). No chair synthesis was produced.`,
+    unresolved_blocking_issues: responses.flatMap(m => (m.blocking_objections || []).map(issue => `${m.roleName}: ${issue}`)),
+    dissent: unavailableSeats.length ? [`Unavailable seats: ${unavailableSeats.join(', ')}`] : [],
+    next_round_focus: finalRound ? [] : ['Retry chair synthesis; unresolved member objections remain'],
+  }
+}
+
 export function compactRound(round) {
   return round.members.map(m => ({
     roleId: m.roleId, roleName: m.roleName, position: m.position, confidence: m.confidence,
